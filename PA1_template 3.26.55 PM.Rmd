@@ -1,0 +1,158 @@
+Jay's Peer Assessment file 1
+========================================================
+
+Set working directory, download the data, unzip the files, read in the data:
+
+```{r}
+setwd("~/Documents/R/repdata")
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+download.file(url, destfile="activity.zip", method="curl")
+unzip("activity.zip")
+activity <- read.csv("activity.csv")
+```
+
+
+summarize data
+```{r tidydata}
+library(plyr)
+activity$date <- as.Date(activity$date)
+# activity$interval <- strptime(activity$interval, "%H%M")
+perDay <- ddply(activity, 
+                ~date, 
+                summarise, 
+                stepsSum = sum(steps),
+                stepsMean = mean(steps, na.rm =TRUE),
+                stepsMedian = median(steps, na.rm =TRUE))
+```
+
+make a histogram of steps per day
+```{r histogram}
+library(ggplot2)
+ggplot(perDay, aes(stepsSum)) +
+geom_histogram(binwidth = 1600,
+               colour = "blue",
+               fill = "white") +
+xlab("Steps Per Day")
+```
+
+return the mean and median
+```{r meanMedian}
+perDay
+ggplot(activity, aes(date, steps)) +
+     stat_summary(fun.y = mean, geom = "line")
+```
+
+
+plot time series
+```{r timeseries}
+intervals <- ddply(activity, 
+                   ~interval, 
+                   summarise,
+                   intervalMean = mean(steps, na.rm = TRUE), 
+                   intervalMedian = median(steps, na.rm = TRUE))
+with(intervals, plot(intervalMean ~ interval, 
+                     type = "l", 
+                     ylab="Average steps taken",
+                     xlab="time of day"))
+```
+
+the interval with the max mean steps per day:
+```{r maxMean}
+intervals$interval[intervals$intervalMean==max(intervals$intervalMean)]
+```
+
+total number of missing values
+```{r missingValues}
+missing <- is.na(activity$steps)
+table(missing)
+```
+
+replace missing values with mean values for that interval
+```{r replace missing}
+replaceNA <- function(steps, interval) {
+     if(!is.na(steps))
+          return(steps)
+     else 
+          return(intervals$intervalMean[intervals$interval==interval])
+}
+activitynarm <- activity
+for (i in 1:length(activitynarm$steps)) {
+     activitynarm$steps[i] <- replaceNA(activitynarm$steps[i], activitynarm$interval[i])
+}
+
+# intervals2 is summary data with new, NA-removed data.
+intervals2 <- ddply(activitynarm, 
+                   ~interval, 
+                   summarise,
+                   intervalMean = mean(steps, na.rm = TRUE), 
+                   intervalMedian = median(steps, na.rm = TRUE))
+with(intervals2, plot(intervalMean ~ interval, 
+                     type = "l", 
+                     ylab="Average steps taken",
+                     xlab="time of day"))
+par(mfrow = c(1,2))
+with(intervals2, plot(intervalMedian ~ interval, 
+                     type = "l", 
+                     main = "NAs removed",
+                     ylab="Median steps taken",
+                     xlab="time of day"))
+with(intervals, plot(intervalMedian ~ interval, 
+                     type = "l", 
+                     main = "NA values preserved",
+                     ylab="Median steps taken",
+                     xlab="time of day"))
+perDay2 <- ddply(activitynarm, 
+                ~date, 
+                summarise, 
+                stepsSum2 = sum(steps),
+                stepsMean2 = mean(steps, na.rm =TRUE),
+                stepsMedian2 = median(steps, na.rm =TRUE))
+perDay <- cbind(perDay, perDay2[,2:4])
+
+par(mfrow = c(1,2))
+with(perDay, hist(stepsSum2,
+                  main = "NAs removed",
+                  ylim = c(0,25),  
+                  breaks = 15,
+                  ylab="daily steps taken",
+                  xlab="counts"))
+hist(perDay$stepsSum, 
+   #  yaxt = "n",
+     ylim = c(0,25),
+     breaks = 15,
+     main = "NA values preserved",
+     ylab = "daily steps taken",
+     xlab = "counts")
+               
+```
+
+Imputing missing values conclusion:
+given the method I used, the mean values for the intervals should not change, however with the significant increase in non-zero values, the medians, or more precisely, the upper quartile should increase. Additionally, the total number of steps taken should significantly increase.
+
+
+Now to compare average number of steps taken on weekdays versus weekends:
+
+```{r weekdays}
+# add days of the week to activitynarm data.
+activitynarm$day <- weekdays(activitynarm$date)
+
+# classify days as weekdays or weekends
+for (i in 1:length(activitynarm$day)) {
+     if (activitynarm$day[i] %in% c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday")) {
+          activitynarm$isWeekday[i] <- "Weekday"
+          }
+     else activitynarm$isWeekday[i] <- "Weekend"
+}
+
+intervals3 <- ddply(activitynarm, 
+                   .(interval, isWeekday), 
+                   summarise,
+                   intervalMean = mean(steps, na.rm = TRUE), 
+                   intervalMedian = median(steps, na.rm = TRUE))
+
+library(lattice)
+xyplot(intervalMean ~ interval | isWeekday, 
+       type = "l",
+       data = intervals3, 
+       layout = c(1,2))
+```
